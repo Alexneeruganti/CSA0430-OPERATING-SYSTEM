@@ -1,0 +1,69 @@
+import subprocess
+import re
+
+def gather_memory_info(hostnames, username, password):
+    memory_info = {}
+
+    for hostname in hostnames:
+        try:
+            ssh_command = "sshpass -p '{}' ssh {}@{} 'free -m'".format(password, username, hostname)
+            ssh_process = subprocess.Popen(ssh_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = ssh_process.communicate()
+
+            if ssh_process.returncode == 0:
+                output_lines = stdout.decode().splitlines()
+
+                if len(output_lines) >= 2:
+                    memory_data = re.findall(r'\d+', output_lines[1])
+                    if len(memory_data) >= 3:
+                        total_memory = int(memory_data[1])
+                        used_memory = int(memory_data[2])
+                        memory_info[hostname] = {
+                            'total_memory_MB': total_memory,
+                            'used_memory_MB': used_memory
+                        }
+                    else:
+                        print("Invalid output format for memory info on {}".format(hostname))
+                else:
+                    print("Insufficient output for memory info on {}".format(hostname))
+            else:
+                print("Error executing SSH command to {}: {}".format(hostname, stderr.decode().strip()))
+        except Exception as e:
+            print("Error connecting to {}: {}".format(hostname, str(e)))
+
+    return memory_info
+
+def analyze_memory_constraints(memory_info):
+    if not memory_info:
+        print("No memory information available.")
+        return
+
+    total_memory_cluster = sum(info['total_memory_MB'] for info in memory_info.values())
+    used_memory_cluster = sum(info['used_memory_MB'] for info in memory_info.values())
+
+    print("Total Memory in Cluster: {} MB".format(total_memory_cluster))
+    print("Total Used Memory in Cluster: {} MB".format(used_memory_cluster))
+
+    if total_memory_cluster > 0:
+        memory_utilization_percentage = (used_memory_cluster / total_memory_cluster) * 100
+        print("Cluster Memory Utilization: {:.2f}%".format(memory_utilization_percentage))
+    else:
+        print("Total memory in cluster is zero, cannot calculate utilization.")
+
+if __name__ == "__main__":
+    cluster_hostnames = ['node1', 'node2', 'node3']
+    username = 'myusername'
+    password = 'mypassword'
+
+    print("Gathering memory information from cluster nodes...")
+    memory_info = gather_memory_info(cluster_hostnames, username, password)
+
+    if memory_info:
+        print("\nMemory information collected successfully:")
+        for hostname, info in memory_info.items():
+            print("Memory info for {}: Total {} MB, Used {} MB".format(hostname, info['total_memory_MB'], info['used_memory_MB']))
+
+        print("\nAnalyzing memory constraints...")
+        analyze_memory_constraints(memory_info)
+    else:
+        print("Failed to collect memory information from cluster nodes.")
